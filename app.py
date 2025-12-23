@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-import yfinance as yf
+import pandas as pd
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="FX Macro Bias App", layout="wide")
@@ -43,14 +43,26 @@ def fred_series(series_id: str, start_date: str = "1970-01-01") -> pd.Series:
 
 @st.cache_data(ttl=60 * 30)
 def yahoo_fx(pair: str, start="2000-01-01") -> pd.Series:
-    """Fetch FX from Yahoo Finance."""
-    ticker = {"GBPUSD": "GBPUSD=X", "GBPJPY": "GBPJPY=X"}[pair]
-    df = yf.download(ticker, start=start, progress=False)
-    if df.empty:
-        raise RuntimeError(f"No data returned from Yahoo for {ticker}.")
+    """
+    Fetch FX from Stooq free CSV feed (no extra libs).
+    Stooq symbols:
+      - GBPUSD -> gbpusd
+      - GBPJPY -> gbpjpy
+    """
+    symbol = {"GBPUSD": "gbpusd", "GBPJPY": "gbpjpy"}[pair]
+    url = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
+    df = pd.read_csv(url)
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df = df.dropna(subset=["Date"]).set_index("Date").sort_index()
+    if "Close" not in df.columns:
+        raise RuntimeError("Stooq data missing Close column.")
     s = df["Close"].dropna()
+    s = s[s.index >= pd.to_datetime(start)]
     s.name = pair
+    if s.empty:
+        raise RuntimeError("No FX data returned (check Stooq availability).")
     return s
+
 
 
 def to_monthly_last(s: pd.Series) -> pd.Series:
